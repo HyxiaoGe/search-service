@@ -1,0 +1,27 @@
+from app.config import settings
+from app.providers.base import SearchProvider
+from app.providers.brave import BraveProvider
+
+_providers: dict[str, SearchProvider] = {}
+
+
+def _init_providers() -> None:
+    _providers["brave"] = BraveProvider()
+
+
+def get_provider(name: str | None = None) -> SearchProvider:
+    if not _providers:
+        _init_providers()
+    provider_name = name or settings.SEARCH_PROVIDER
+    if provider_name not in _providers:
+        raise ValueError(f"Unknown provider: {provider_name}")
+    return _providers[provider_name]
+
+
+def list_providers() -> list[dict]:
+    if not _providers:
+        _init_providers()
+    return [
+        {"name": name, "available": True}
+        for name in _providers
+    ]
