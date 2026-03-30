@@ -14,3 +14,11 @@ services:
         limits:
           memory: 256M
     restart: unless-stopped
+    networks:
+      - default
+      - middleware
+
+networks:
+  middleware:
+    external: true
+    name: middleware_default
