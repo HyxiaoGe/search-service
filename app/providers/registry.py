@@ -1,12 +1,15 @@
 from app.config import settings
 from app.providers.base import SearchProvider
 from app.providers.brave import BraveProvider
+from app.providers.tavily import TavilyProvider
 
 _providers: dict[str, SearchProvider] = {}
 
 
 def _init_providers() -> None:
     _providers["brave"] = BraveProvider()
+    if settings.TAVILY_API_KEY:
+        _providers["tavily"] = TavilyProvider()
 
 
 def get_provider(name: str | None = None) -> SearchProvider:
