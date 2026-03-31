@@ -14,7 +14,7 @@ class TavilyProvider:
         # 构造请求参数
         payload: dict = {
             "query": request.query,
-            "search_depth": "basic",
+            "search_depth": "advanced",
             "max_results": request.count,
             "include_raw_content": False,
         }
