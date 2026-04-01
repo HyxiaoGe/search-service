@@ -17,6 +17,7 @@ class TavilyProvider:
             "search_depth": "advanced",
             "max_results": request.count,
             "include_raw_content": False,
+            "include_favicon": True,
         }
 
         # 搜索类型映射
@@ -61,8 +62,9 @@ class TavilyProvider:
             items.append(SearchResultItem(
                 title=r.get("title", ""),
                 url=r.get("url", ""),
-                description=r.get("content", ""),    # Tavily 的 content 字段是摘要
-                content=r.get("content", ""),         # 同时填入 content 字段
+                description=r.get("content", ""),
+                content=r.get("content", ""),
+                favicon=r.get("favicon"),
                 published_at=r.get("published_date"),
             ))
         return items

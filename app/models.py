@@ -25,6 +25,7 @@ class SearchResultItem(BaseModel):
     url: str
     description: str
     content: str | None = None        # 网页正文摘要（Tavily 等 provider 支持）
+    favicon: str | None = None        # 网站 favicon URL
     published_at: str | None = None
 
 
