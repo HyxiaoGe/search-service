@@ -21,6 +21,16 @@ def get_provider(name: str | None = None) -> SearchProvider:
     return _providers[provider_name]
 
 
+def get_fallback_provider(primary_name: str) -> tuple[str | None, SearchProvider | None]:
+    """获取备用 provider（排除主 provider）"""
+    if not _providers:
+        _init_providers()
+    for name, prov in _providers.items():
+        if name != primary_name:
+            return name, prov
+    return None, None
+
+
 def list_providers() -> list[dict]:
     if not _providers:
         _init_providers()
