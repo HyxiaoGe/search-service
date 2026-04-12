@@ -57,26 +57,32 @@ class BraveProvider:
 
         if search_type == SearchType.WEB:
             for r in data.get("web", {}).get("results", []):
-                items.append(SearchResultItem(
-                    title=r.get("title", ""),
-                    url=r.get("url", ""),
-                    description=r.get("description", ""),
-                    published_at=r.get("page_age"),
-                ))
+                items.append(
+                    SearchResultItem(
+                        title=r.get("title", ""),
+                        url=r.get("url", ""),
+                        description=r.get("description", ""),
+                        published_at=r.get("page_age"),
+                    )
+                )
         elif search_type == SearchType.NEWS:
             for r in data.get("results", []):
-                items.append(SearchResultItem(
-                    title=r.get("title", ""),
-                    url=r.get("url", ""),
-                    description=r.get("description", ""),
-                    published_at=r.get("age"),
-                ))
+                items.append(
+                    SearchResultItem(
+                        title=r.get("title", ""),
+                        url=r.get("url", ""),
+                        description=r.get("description", ""),
+                        published_at=r.get("age"),
+                    )
+                )
         elif search_type == SearchType.IMAGE:
             for r in data.get("results", []):
-                items.append(SearchResultItem(
-                    title=r.get("title", ""),
-                    url=r.get("url", ""),
-                    description=r.get("source", ""),
-                ))
+                items.append(
+                    SearchResultItem(
+                        title=r.get("title", ""),
+                        url=r.get("url", ""),
+                        description=r.get("source", ""),
+                    )
+                )
 
         return items

@@ -29,10 +29,10 @@ class TavilyProvider:
         # 时效性映射（Brave freshness → Tavily time_range）
         if request.freshness:
             freshness_map = {
-                "pd": "day",     # past day
-                "pw": "week",    # past week
-                "pm": "month",   # past month
-                "py": "year",    # past year
+                "pd": "day",  # past day
+                "pw": "week",  # past week
+                "pm": "month",  # past month
+                "py": "year",  # past year
             }
             payload["time_range"] = freshness_map.get(request.freshness, request.freshness)
 
@@ -59,12 +59,14 @@ class TavilyProvider:
     def _parse_results(self, data: dict) -> list[SearchResultItem]:
         items: list[SearchResultItem] = []
         for r in data.get("results", []):
-            items.append(SearchResultItem(
-                title=r.get("title", ""),
-                url=r.get("url", ""),
-                description=r.get("content", ""),
-                content=r.get("content", ""),
-                favicon=r.get("favicon"),
-                published_at=r.get("published_date"),
-            ))
+            items.append(
+                SearchResultItem(
+                    title=r.get("title", ""),
+                    url=r.get("url", ""),
+                    description=r.get("content", ""),
+                    content=r.get("content", ""),
+                    favicon=r.get("favicon"),
+                    published_at=r.get("published_date"),
+                )
+            )
         return items

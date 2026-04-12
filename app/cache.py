@@ -1,5 +1,4 @@
 import hashlib
-import json
 
 import redis.asyncio as redis
 
@@ -50,7 +49,11 @@ async def get_cached(
 
 
 async def set_cached(
-    provider: str, search_type: SearchType, query: str, lang: str, region: str,
+    provider: str,
+    search_type: SearchType,
+    query: str,
+    lang: str,
+    region: str,
     response: SearchResponse,
 ) -> None:
     r = await get_redis()

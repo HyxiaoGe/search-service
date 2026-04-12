@@ -1,8 +1,8 @@
 from fastmcp import FastMCP
 
+from app.cache import get_cached, set_cached
 from app.models import SearchRequest, SearchType
 from app.providers.registry import get_provider
-from app.cache import get_cached, set_cached
 
 mcp = FastMCP("search", instructions="Search the web using configured providers")
 

@@ -34,7 +34,4 @@ def get_fallback_provider(primary_name: str) -> tuple[str | None, SearchProvider
 def list_providers() -> list[dict]:
     if not _providers:
         _init_providers()
-    return [
-        {"name": name, "available": True}
-        for name in _providers
-    ]
+    return [{"name": name, "available": True} for name in _providers]

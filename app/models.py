@@ -1,9 +1,9 @@
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 
-class SearchType(str, Enum):
+class SearchType(StrEnum):
     WEB = "web"
     NEWS = "news"
     IMAGE = "image"
@@ -24,8 +24,8 @@ class SearchResultItem(BaseModel):
     title: str
     url: str
     description: str
-    content: str | None = None        # 网页正文摘要（Tavily 等 provider 支持）
-    favicon: str | None = None        # 网站 favicon URL
+    content: str | None = None  # 网页正文摘要（Tavily 等 provider 支持）
+    favicon: str | None = None  # 网站 favicon URL
     published_at: str | None = None
 
 
