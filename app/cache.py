@@ -1,9 +1,10 @@
 import hashlib
+import json
 
 import redis.asyncio as redis
 
 from app.config import settings
-from app.models import SearchResponse, SearchType
+from app.models import SearchRequest, SearchResponse, SearchType
 
 _redis: redis.Redis | None = None
 
@@ -22,9 +23,21 @@ async def close_redis() -> None:
         _redis = None
 
 
-def _cache_key(provider: str, search_type: str, query: str, lang: str, region: str) -> str:
-    raw = f"{provider}:{search_type}:{query.lower().strip()}:{lang}:{region}"
-    return f"search:{hashlib.sha256(raw.encode()).hexdigest()}"
+def build_cache_key(provider: str, request: SearchRequest) -> str:
+    raw = {
+        "version": 2,
+        "provider": provider,
+        "type": request.type.value,
+        "query": request.query.lower().strip(),
+        "lang": request.lang.lower().strip(),
+        "region": request.region.lower().strip(),
+        "freshness": request.freshness,
+        "count": request.count,
+        "page": request.page,
+        "domain_filters": sorted(request.domain_filters),
+    }
+    encoded = json.dumps(raw, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return f"search:v2:{hashlib.sha256(encoded.encode()).hexdigest()}"
 
 
 def _ttl_for_type(search_type: SearchType) -> int:
@@ -35,30 +48,22 @@ def _ttl_for_type(search_type: SearchType) -> int:
     }[search_type]
 
 
-async def get_cached(
-    provider: str, search_type: SearchType, query: str, lang: str, region: str
-) -> SearchResponse | None:
+async def get_cached(provider: str, request: SearchRequest) -> SearchResponse | None:
     r = await get_redis()
-    key = _cache_key(provider, search_type.value, query, lang, region)
+    key = build_cache_key(provider, request)
     data = await r.get(key)
     if data is None:
         return None
     resp = SearchResponse.model_validate_json(data)
     resp.cached = True
+    resp.cache_key_version = 2
     return resp
 
 
-async def set_cached(
-    provider: str,
-    search_type: SearchType,
-    query: str,
-    lang: str,
-    region: str,
-    response: SearchResponse,
-) -> None:
+async def set_cached(provider: str, request: SearchRequest, response: SearchResponse) -> None:
     r = await get_redis()
-    key = _cache_key(provider, search_type.value, query, lang, region)
-    ttl = _ttl_for_type(search_type)
+    key = build_cache_key(provider, request)
+    ttl = _ttl_for_type(request.type)
     await r.setex(key, ttl, response.model_dump_json())
 
 

@@ -1,6 +1,7 @@
 from fastmcp import FastMCP
 
 from app.cache import get_cached, set_cached
+from app.config import settings
 from app.models import SearchRequest, SearchType
 from app.providers.registry import get_provider
 
@@ -18,13 +19,18 @@ async def search(
     search_type = SearchType(type)
     req = SearchRequest(query=query, type=search_type, count=count, freshness=freshness)
     provider = get_provider()
+    provider_name = settings.SEARCH_PROVIDER
 
-    cached = await get_cached("brave", search_type, query, "en", "us")
+    cached = await get_cached(provider_name, req)
     if cached:
         return cached.model_dump()
 
     result = await provider.search(req)
-    await set_cached("brave", search_type, query, "en", "us", result)
+    result.provider = result.provider or provider_name
+    result.requested_provider = provider_name
+    result.result_provider = result.provider
+    result.provider_chain = [provider_name]
+    await set_cached(result.result_provider, req, result)
     return result.model_dump()
 
 

@@ -18,17 +18,42 @@ async def search(request: Request, body: SearchRequest) -> SearchResponse:
     provider = get_provider(provider_name)
     actual_provider = provider_name or settings.SEARCH_PROVIDER
 
-    cached = await get_cached(actual_provider, body.type, body.query, body.lang, body.region)
+    cached = await get_cached(actual_provider, body)
     if cached:
-        log.info("cache_hit", query=body.query, type=body.type.value, provider=actual_provider)
+        log.info(
+            "cache_hit",
+            query=body.query,
+            type=body.type.value,
+            provider=actual_provider,
+            freshness=body.freshness,
+            count=body.count,
+            page=body.page,
+            cache_key_version=2,
+        )
         return cached
 
-    log.info("search_request", query=body.query, type=body.type.value, provider=actual_provider)
+    log.info(
+        "search_request",
+        query=body.query,
+        type=body.type.value,
+        provider=actual_provider,
+        freshness=body.freshness,
+        count=body.count,
+        page=body.page,
+    )
     result = await provider.search(body)
+    result = _with_provenance(
+        result,
+        requested_provider=actual_provider,
+        result_provider=result.provider or actual_provider,
+        fallback_used=False,
+        provider_chain=[actual_provider],
+    )
     log.info(
         "search_response",
         query=body.query,
         provider=actual_provider,
+        result_provider=result.result_provider,
         result_count=len(result.results),
         titles=[r.title[:50] for r in result.results[:3]],
     )
@@ -47,6 +72,13 @@ async def search(request: Request, body: SearchRequest) -> SearchResponse:
             )
             try:
                 fb_result = await fb_provider.search(body)
+                fb_result = _with_provenance(
+                    fb_result,
+                    requested_provider=actual_provider,
+                    result_provider=fb_result.provider or fb_name,
+                    fallback_used=True,
+                    provider_chain=[actual_provider, fb_name],
+                )
                 log.info(
                     "fallback_response",
                     query=body.query,
@@ -61,7 +93,8 @@ async def search(request: Request, body: SearchRequest) -> SearchResponse:
 
     # 结果质量不足时跳过缓存
     if len(result.results) >= min_acceptable:
-        await set_cached(actual_provider, body.type, body.query, body.lang, body.region, result)
+        cache_provider = result.result_provider or result.provider
+        await set_cached(cache_provider, body, result)
     else:
         log.warning(
             "skip_cache",
@@ -72,3 +105,20 @@ async def search(request: Request, body: SearchRequest) -> SearchResponse:
         )
 
     return result
+
+
+def _with_provenance(
+    response: SearchResponse,
+    *,
+    requested_provider: str,
+    result_provider: str,
+    fallback_used: bool,
+    provider_chain: list[str],
+) -> SearchResponse:
+    response.provider = result_provider
+    response.requested_provider = requested_provider
+    response.result_provider = result_provider
+    response.fallback_used = fallback_used
+    response.provider_chain = provider_chain
+    response.cache_key_version = 2
+    return response

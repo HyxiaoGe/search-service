@@ -18,6 +18,7 @@ class SearchRequest(BaseModel):
     lang: str = "en"
     region: str = "us"
     freshness: str | None = None
+    domain_filters: list[str] = Field(default_factory=list)
 
 
 class SearchResultItem(BaseModel):
@@ -33,5 +34,10 @@ class SearchResponse(BaseModel):
     query: str
     type: SearchType
     provider: str
+    requested_provider: str | None = None
+    result_provider: str | None = None
+    fallback_used: bool = False
+    provider_chain: list[str] = Field(default_factory=list)
     cached: bool = False
+    cache_key_version: int = 2
     results: list[SearchResultItem] = []
