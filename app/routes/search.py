@@ -28,7 +28,7 @@ async def search(request: Request, body: SearchRequest) -> SearchResponse:
             freshness=body.freshness,
             count=body.count,
             page=body.page,
-            cache_key_version=2,
+            cache_key_version=3,
         )
         return cached
 
@@ -56,6 +56,7 @@ async def search(request: Request, body: SearchRequest) -> SearchResponse:
             provider=actual_provider,
             result_provider=result.result_provider,
             result_count=len(result.results),
+            relaxed_freshness=result.relaxed_freshness,
             titles=[r.title[:50] for r in result.results[:3]],
         )
     except Exception as e:
@@ -72,8 +73,8 @@ async def search(request: Request, body: SearchRequest) -> SearchResponse:
         if fallback_result and len(fallback_result.results) > len(result.results):
             result = fallback_result
 
-    # 结果质量不足时跳过缓存
-    if len(result.results) >= min_acceptable:
+    # 结果质量不足或放宽了时效约束时跳过缓存
+    if len(result.results) >= min_acceptable and not result.relaxed_freshness:
         cache_provider = result.result_provider or result.provider
         await set_cached(cache_provider, body, result)
     else:
@@ -83,6 +84,7 @@ async def search(request: Request, body: SearchRequest) -> SearchResponse:
             provider=result.provider,
             requested=body.count,
             returned=len(result.results),
+            relaxed_freshness=result.relaxed_freshness,
         )
 
     return result
@@ -141,5 +143,5 @@ def _with_provenance(
     response.result_provider = result_provider
     response.fallback_used = fallback_used
     response.provider_chain = provider_chain
-    response.cache_key_version = 2
+    response.cache_key_version = 3
     return response

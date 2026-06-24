@@ -38,8 +38,9 @@ class SearchResponse(BaseModel):
     result_provider: str | None = None
     fallback_used: bool = False
     provider_chain: list[str] = Field(default_factory=list)
+    relaxed_freshness: bool = False
     cached: bool = False
-    cache_key_version: int = 2
+    cache_key_version: int = 3
     results: list[SearchResultItem] = []
 
 

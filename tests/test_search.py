@@ -65,6 +65,15 @@ def test_cache_key_changes_when_result_shaping_params_change():
     assert build_cache_key("brave", base) != build_cache_key("brave", filtered)
 
 
+def test_cache_key_distinguishes_default_region_from_explicit_region():
+    from app.cache import build_cache_key
+
+    default_region = SearchRequest(query="2026年中国结婚人数 是否创新低")
+    explicit_us = SearchRequest(query="2026年中国结婚人数 是否创新低", region="us")
+
+    assert build_cache_key("firecrawl", default_region) != build_cache_key("firecrawl", explicit_us)
+
+
 async def test_search_route_marks_fallback_provider_provenance(monkeypatch):
     from starlette.requests import Request
 
@@ -204,6 +213,116 @@ async def test_search_route_uses_fallback_when_primary_provider_raises(monkeypat
     assert response.fallback_used is True
     assert response.provider_chain == ["firecrawl", "brave"]
     assert cached_calls[0][0] == "brave"
+
+
+async def test_search_route_skips_cache_for_relaxed_freshness_results(monkeypatch):
+    from starlette.requests import Request
+
+    from app.routes import search as search_route
+
+    class Provider:
+        async def search(self, request: SearchRequest) -> SearchResponse:
+            return SearchResponse(
+                query=request.query,
+                type=request.type,
+                provider="firecrawl",
+                relaxed_freshness=True,
+                results=[
+                    SearchResultItem(title="one", url="https://one.example", description="one"),
+                    SearchResultItem(title="two", url="https://two.example", description="two"),
+                ],
+            )
+
+    async def fake_get_cached(*_args, **_kwargs):
+        return None
+
+    cached_calls = []
+
+    async def fake_set_cached(*args):
+        cached_calls.append(args)
+
+    monkeypatch.setattr(search_route, "get_cached", fake_get_cached)
+    monkeypatch.setattr(search_route, "set_cached", fake_set_cached)
+    monkeypatch.setattr(search_route, "get_provider", lambda _name=None: Provider())
+    monkeypatch.setattr(search_route, "get_fallback_provider", lambda _primary: (None, None))
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/search",
+            "headers": [],
+            "query_string": b"",
+            "client": ("127.0.0.1", 12345),
+            "server": ("testserver", 80),
+            "scheme": "http",
+        }
+    )
+    body = SearchRequest(query="2026年中国结婚人数 是否创新低", provider="firecrawl", count=2, freshness="pw")
+
+    response = await search_route.search.__wrapped__(request, body)
+
+    assert response.relaxed_freshness is True
+    assert cached_calls == []
+
+
+async def test_search_route_does_not_fallback_when_relaxed_firecrawl_results_are_sufficient(monkeypatch):
+    from starlette.requests import Request
+
+    from app.routes import search as search_route
+
+    class Provider:
+        async def search(self, request: SearchRequest) -> SearchResponse:
+            return SearchResponse(
+                query=request.query,
+                type=request.type,
+                provider="firecrawl",
+                relaxed_freshness=True,
+                results=[
+                    SearchResultItem(title="one", url="https://one.example", description="one"),
+                    SearchResultItem(title="two", url="https://two.example", description="two"),
+                    SearchResultItem(title="three", url="https://three.example", description="three"),
+                ],
+            )
+
+    async def fake_get_cached(*_args, **_kwargs):
+        return None
+
+    cached_calls = []
+    fallback_calls = []
+
+    async def fake_set_cached(*args):
+        cached_calls.append(args)
+
+    def fake_get_fallback_provider(primary: str):
+        fallback_calls.append(primary)
+        return None, None
+
+    monkeypatch.setattr(search_route, "get_cached", fake_get_cached)
+    monkeypatch.setattr(search_route, "set_cached", fake_set_cached)
+    monkeypatch.setattr(search_route, "get_provider", lambda _name=None: Provider())
+    monkeypatch.setattr(search_route, "get_fallback_provider", fake_get_fallback_provider)
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/search",
+            "headers": [],
+            "query_string": b"",
+            "client": ("127.0.0.1", 12345),
+            "server": ("testserver", 80),
+            "scheme": "http",
+        }
+    )
+    body = SearchRequest(query="2026年中国结婚人数 是否创新低", provider="firecrawl", count=5, freshness="pw")
+
+    response = await search_route.search.__wrapped__(request, body)
+
+    assert response.result_provider == "firecrawl"
+    assert response.relaxed_freshness is True
+    assert fallback_calls == []
+    assert cached_calls == []
 
 
 def test_registry_registers_firecrawl_when_key_is_present(monkeypatch):
@@ -348,6 +467,114 @@ async def test_firecrawl_image_response_parsing(monkeypatch):
         )
     ]
     assert calls[0]["json"]["sources"] == ["images"]
+
+
+async def test_firecrawl_defaults_chinese_queries_to_cn_region(monkeypatch):
+    from app.providers import firecrawl
+
+    calls: list[dict] = []
+    monkeypatch.setattr(firecrawl.settings, "FIRECRAWL_API_KEY", "fc-test-key")
+    monkeypatch.setattr(firecrawl.httpx, "AsyncClient", _firecrawl_client({"data": {"web": []}}, calls))
+
+    await firecrawl.FirecrawlProvider().search(SearchRequest(query="2026年中国结婚人数 是否创新低", count=5))
+
+    assert calls[0]["json"]["country"] == "CN"
+
+
+async def test_firecrawl_keeps_explicit_us_region_for_chinese_queries(monkeypatch):
+    from app.providers import firecrawl
+
+    calls: list[dict] = []
+    monkeypatch.setattr(firecrawl.settings, "FIRECRAWL_API_KEY", "fc-test-key")
+    monkeypatch.setattr(firecrawl.httpx, "AsyncClient", _firecrawl_client({"data": {"web": []}}, calls))
+
+    await firecrawl.FirecrawlProvider().search(
+        SearchRequest(query="2026年中国结婚人数 是否创新低", count=5, region="us")
+    )
+
+    assert calls[0]["json"]["country"] == "US"
+
+
+async def test_firecrawl_retries_without_freshness_when_first_response_is_empty(monkeypatch):
+    from app.providers import firecrawl
+
+    calls: list[dict] = []
+
+    class FakeAsyncClient:
+        def __init__(self, timeout: int):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, _exc_type, _exc, _tb):
+            return False
+
+        async def post(self, url: str, json: dict, headers: dict):
+            calls.append({"url": url, "json": json, "headers": headers, "timeout": self.timeout})
+            if len(calls) == 1:
+                return httpx.Response(200, json={"data": {"web": []}}, request=httpx.Request("POST", url))
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "web": [
+                            {
+                                "title": "结婚人数",
+                                "url": "https://example.cn/marriage",
+                                "description": "统计信息",
+                            }
+                        ]
+                    }
+                },
+                request=httpx.Request("POST", url),
+            )
+
+    monkeypatch.setattr(firecrawl.settings, "FIRECRAWL_API_KEY", "fc-test-key")
+    monkeypatch.setattr(firecrawl.httpx, "AsyncClient", FakeAsyncClient)
+
+    response = await firecrawl.FirecrawlProvider().search(
+        SearchRequest(query="2026年中国结婚人数 是否创新低", count=5, freshness="pw")
+    )
+
+    assert len(response.results) == 1
+    assert response.relaxed_freshness is True
+    assert calls[0]["json"]["tbs"] == "qdr:w"
+    assert "tbs" not in calls[1]["json"]
+    assert calls[1]["json"]["country"] == "CN"
+
+
+async def test_firecrawl_keeps_empty_first_response_when_relaxed_retry_fails(monkeypatch):
+    from app.providers import firecrawl
+
+    calls: list[dict] = []
+
+    class FakeAsyncClient:
+        def __init__(self, timeout: int):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, _exc_type, _exc, _tb):
+            return False
+
+        async def post(self, url: str, json: dict, headers: dict):
+            calls.append({"url": url, "json": json, "headers": headers, "timeout": self.timeout})
+            if len(calls) == 1:
+                return httpx.Response(200, json={"data": {"web": []}}, request=httpx.Request("POST", url))
+            return httpx.Response(500, json={"error": "temporary"}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(firecrawl.settings, "FIRECRAWL_API_KEY", "fc-test-key")
+    monkeypatch.setattr(firecrawl.httpx, "AsyncClient", FakeAsyncClient)
+
+    response = await firecrawl.FirecrawlProvider().search(
+        SearchRequest(query="2026年中国结婚人数 是否创新低", count=5, freshness="pw")
+    )
+
+    assert response.results == []
+    assert response.relaxed_freshness is False
+    assert len(calls) == 2
 
 
 @pytest.mark.parametrize(

@@ -1,6 +1,7 @@
 import httpx
 
 from app.config import settings
+from app.logger import get_logger
 from app.models import (
     ProviderHistoricalUsageResponse,
     ProviderUsagePeriod,
@@ -10,6 +11,8 @@ from app.models import (
     SearchResultItem,
     SearchType,
 )
+
+log = get_logger()
 
 FIRECRAWL_SOURCES = {
     SearchType.WEB: "web",
@@ -44,16 +47,36 @@ class FirecrawlProvider:
         }
 
         async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.post(self.search_url, json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
+            data = await self._post_search(client, payload, headers)
+            results = self._parse_results(data, request.type)
+            relaxed_freshness = False
+
+            if not results and self._should_relax_freshness(request, payload):
+                relaxed_payload = {key: value for key, value in payload.items() if key != "tbs"}
+                try:
+                    relaxed_data = await self._post_search(client, relaxed_payload, headers)
+                except httpx.HTTPError as exc:
+                    log.warning("firecrawl_relaxed_freshness_failed", query=request.query, error=str(exc))
+                else:
+                    relaxed_results = self._parse_results(relaxed_data, request.type)
+                    log.info(
+                        "firecrawl_relaxed_freshness",
+                        query=request.query,
+                        original_tbs=payload["tbs"],
+                        strict_results=len(results),
+                        relaxed_results=len(relaxed_results),
+                    )
+                    if relaxed_results:
+                        results = relaxed_results
+                        relaxed_freshness = True
 
         return SearchResponse(
             query=request.query,
             type=request.type,
             provider="firecrawl",
             cached=False,
-            results=self._parse_results(data, request.type),
+            relaxed_freshness=relaxed_freshness,
+            results=results,
         )
 
     def _build_payload(self, request: SearchRequest) -> dict:
@@ -63,14 +86,37 @@ class FirecrawlProvider:
             "sources": [FIRECRAWL_SOURCES[request.type]],
         }
 
-        if request.region:
-            payload["country"] = request.region.upper()
+        country = self._country_for_request(request)
+        if country:
+            payload["country"] = country
         if request.freshness:
             payload["tbs"] = FRESHNESS_TBS.get(request.freshness, request.freshness)
         if request.domain_filters:
             payload["includeDomains"] = request.domain_filters
 
         return payload
+
+    async def _post_search(self, client: httpx.AsyncClient, payload: dict, headers: dict) -> dict:
+        resp = await client.post(self.search_url, json=payload, headers=headers)
+        resp.raise_for_status()
+        return resp.json()
+
+    def _country_for_request(self, request: SearchRequest) -> str | None:
+        if not request.region:
+            return None
+        if (
+            "region" not in request.model_fields_set
+            and request.region.lower() == "us"
+            and self._contains_cjk(request.query)
+        ):
+            return "CN"
+        return request.region.upper()
+
+    def _contains_cjk(self, value: str) -> bool:
+        return any("\u4e00" <= char <= "\u9fff" for char in value)
+
+    def _should_relax_freshness(self, request: SearchRequest, payload: dict) -> bool:
+        return "tbs" in payload and request.freshness == "pw" and self._contains_cjk(request.query)
 
     def _parse_results(self, data: dict, search_type: SearchType) -> list[SearchResultItem]:
         if search_type == SearchType.IMAGE:

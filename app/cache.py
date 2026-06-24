@@ -25,19 +25,20 @@ async def close_redis() -> None:
 
 def build_cache_key(provider: str, request: SearchRequest) -> str:
     raw = {
-        "version": 2,
+        "version": 3,
         "provider": provider,
         "type": request.type.value,
         "query": request.query.lower().strip(),
         "lang": request.lang.lower().strip(),
         "region": request.region.lower().strip(),
+        "region_explicit": "region" in request.model_fields_set,
         "freshness": request.freshness,
         "count": request.count,
         "page": request.page,
         "domain_filters": sorted(request.domain_filters),
     }
     encoded = json.dumps(raw, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return f"search:v2:{hashlib.sha256(encoded.encode()).hexdigest()}"
+    return f"search:v3:{hashlib.sha256(encoded.encode()).hexdigest()}"
 
 
 def _ttl_for_type(search_type: SearchType) -> int:
@@ -56,7 +57,7 @@ async def get_cached(provider: str, request: SearchRequest) -> SearchResponse | 
         return None
     resp = SearchResponse.model_validate_json(data)
     resp.cached = True
-    resp.cache_key_version = 2
+    resp.cache_key_version = 3
     return resp
 
 
