@@ -58,6 +58,8 @@ Response:
 |--------|------|-------------|
 | GET | `/health` | Health check |
 | GET | `/providers` | List available providers |
+| GET | `/usage/firecrawl` | Firecrawl credit usage; returns `available=false` with null credit fields when `FIRECRAWL_API_KEY` is unset |
+| GET | `/usage/firecrawl/historical?by_api_key=true` | Historical Firecrawl credit usage; API keys are masked when grouped by key |
 | DELETE | `/cache` | Flush cache |
 
 ## MCP Server

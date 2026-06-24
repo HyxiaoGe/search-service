@@ -1,10 +1,15 @@
 from app.config import settings
+from app.models import ProviderHistoricalUsageResponse, ProviderUsageResponse
 from app.providers.base import SearchProvider
 from app.providers.brave import BraveProvider
-from app.providers.firecrawl import FirecrawlProvider
+from app.providers.firecrawl import FirecrawlProvider, FirecrawlUsageClient, FirecrawlUsageError
 from app.providers.tavily import TavilyProvider
 
 _providers: dict[str, SearchProvider] = {}
+
+
+class ProviderUsageError(Exception):
+    pass
 
 
 def _init_providers() -> None:
@@ -38,3 +43,23 @@ def list_providers() -> list[dict]:
     if not _providers:
         _init_providers()
     return [{"name": name, "available": True} for name in _providers]
+
+
+async def get_firecrawl_usage() -> ProviderUsageResponse:
+    if not settings.FIRECRAWL_API_KEY.strip():
+        return ProviderUsageResponse(provider="firecrawl", available=False)
+
+    try:
+        return await FirecrawlUsageClient().get_usage()
+    except FirecrawlUsageError as exc:
+        raise ProviderUsageError(str(exc)) from exc
+
+
+async def get_firecrawl_historical_usage(*, by_api_key: bool = False) -> ProviderHistoricalUsageResponse:
+    if not settings.FIRECRAWL_API_KEY.strip():
+        return ProviderHistoricalUsageResponse(provider="firecrawl", available=False, by_api_key=by_api_key)
+
+    try:
+        return await FirecrawlUsageClient().get_historical_usage(by_api_key=by_api_key)
+    except FirecrawlUsageError as exc:
+        raise ProviderUsageError(str(exc)) from exc

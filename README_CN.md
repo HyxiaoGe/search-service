@@ -58,6 +58,8 @@ curl -X POST http://localhost:8080/search \
 |------|------|------|
 | GET | `/health` | 健康检查 |
 | GET | `/providers` | 列出可用的搜索 Provider |
+| GET | `/usage/firecrawl` | Firecrawl credits 使用情况；未配置 `FIRECRAWL_API_KEY` 时返回 `available=false` 且 credits 字段为 null |
+| GET | `/usage/firecrawl/historical?by_api_key=true` | Firecrawl 历史 credits 使用情况；按 key 分组时会脱敏 API key |
 | DELETE | `/cache` | 清空缓存 |
 
 ## MCP Server

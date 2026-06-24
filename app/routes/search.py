@@ -41,55 +41,36 @@ async def search(request: Request, body: SearchRequest) -> SearchResponse:
         count=body.count,
         page=body.page,
     )
-    result = await provider.search(body)
-    result = _with_provenance(
-        result,
-        requested_provider=actual_provider,
-        result_provider=result.provider or actual_provider,
-        fallback_used=False,
-        provider_chain=[actual_provider],
-    )
-    log.info(
-        "search_response",
-        query=body.query,
-        provider=actual_provider,
-        result_provider=result.result_provider,
-        result_count=len(result.results),
-        titles=[r.title[:50] for r in result.results[:3]],
-    )
+    try:
+        result = await provider.search(body)
+        result = _with_provenance(
+            result,
+            requested_provider=actual_provider,
+            result_provider=result.provider or actual_provider,
+            fallback_used=False,
+            provider_chain=[actual_provider],
+        )
+        log.info(
+            "search_response",
+            query=body.query,
+            provider=actual_provider,
+            result_provider=result.result_provider,
+            result_count=len(result.results),
+            titles=[r.title[:50] for r in result.results[:3]],
+        )
+    except Exception as e:
+        log.warning("primary_search_failed", provider=actual_provider, error=str(e))
+        fallback_result = await _run_fallback_search(body, actual_provider)
+        if fallback_result is None:
+            raise
+        result = fallback_result
 
     # 结果不足时尝试 fallback provider
     min_acceptable = max(body.count // 2, 1)
     if len(result.results) < min_acceptable:
-        fb_name, fb_provider = get_fallback_provider(actual_provider)
-        if fb_provider:
-            log.info(
-                "fallback_search",
-                query=body.query,
-                primary=actual_provider,
-                fallback=fb_name,
-                primary_results=len(result.results),
-            )
-            try:
-                fb_result = await fb_provider.search(body)
-                fb_result = _with_provenance(
-                    fb_result,
-                    requested_provider=actual_provider,
-                    result_provider=fb_result.provider or fb_name,
-                    fallback_used=True,
-                    provider_chain=[actual_provider, fb_name],
-                )
-                log.info(
-                    "fallback_response",
-                    query=body.query,
-                    provider=fb_name,
-                    result_count=len(fb_result.results),
-                    titles=[r.title[:50] for r in fb_result.results[:3]],
-                )
-                if len(fb_result.results) > len(result.results):
-                    result = fb_result
-            except Exception as e:
-                log.warning("fallback_failed", provider=fb_name, error=str(e))
+        fallback_result = await _run_fallback_search(body, actual_provider, primary_results=len(result.results))
+        if fallback_result and len(fallback_result.results) > len(result.results):
+            result = fallback_result
 
     # 结果质量不足时跳过缓存
     if len(result.results) >= min_acceptable:
@@ -105,6 +86,46 @@ async def search(request: Request, body: SearchRequest) -> SearchResponse:
         )
 
     return result
+
+
+async def _run_fallback_search(
+    body: SearchRequest,
+    actual_provider: str,
+    *,
+    primary_results: int | None = None,
+) -> SearchResponse | None:
+    fb_name, fb_provider = get_fallback_provider(actual_provider)
+    if not fb_provider:
+        return None
+
+    log.info(
+        "fallback_search",
+        query=body.query,
+        primary=actual_provider,
+        fallback=fb_name,
+        primary_results=primary_results,
+    )
+    try:
+        fb_result = await fb_provider.search(body)
+    except Exception as e:
+        log.warning("fallback_failed", provider=fb_name, error=str(e))
+        return None
+
+    fb_result = _with_provenance(
+        fb_result,
+        requested_provider=actual_provider,
+        result_provider=fb_result.provider or fb_name,
+        fallback_used=True,
+        provider_chain=[actual_provider, fb_name],
+    )
+    log.info(
+        "fallback_response",
+        query=body.query,
+        provider=fb_name,
+        result_count=len(fb_result.results),
+        titles=[r.title[:50] for r in fb_result.results[:3]],
+    )
+    return fb_result
 
 
 def _with_provenance(

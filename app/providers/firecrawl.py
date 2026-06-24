@@ -1,7 +1,15 @@
 import httpx
 
 from app.config import settings
-from app.models import SearchRequest, SearchResponse, SearchResultItem, SearchType
+from app.models import (
+    ProviderHistoricalUsageResponse,
+    ProviderUsagePeriod,
+    ProviderUsageResponse,
+    SearchRequest,
+    SearchResponse,
+    SearchResultItem,
+    SearchType,
+)
 
 FIRECRAWL_SOURCES = {
     SearchType.WEB: "web",
@@ -106,3 +114,119 @@ class FirecrawlProvider:
 
     def _published_at(self, item: dict) -> str | None:
         return item.get("published_at") or item.get("publishedDate") or item.get("published_date") or item.get("date")
+
+
+class FirecrawlUsageError(Exception):
+    pass
+
+
+class FirecrawlUsageClient:
+    def __init__(self) -> None:
+        self.api_key = settings.FIRECRAWL_API_KEY
+        self.base_url = settings.FIRECRAWL_API_URL.rstrip("/")
+        self.usage_url = f"{self.base_url}/v2/team/credit-usage"
+        self.historical_usage_url = f"{self.usage_url}/historical"
+
+    async def get_usage(self) -> ProviderUsageResponse:
+        payload = await self._get_json(self.usage_url)
+
+        if not payload.get("success", False):
+            raise FirecrawlUsageError("Firecrawl usage request failed")
+
+        data = payload.get("data", {})
+        if not isinstance(data, dict):
+            raise FirecrawlUsageError("Firecrawl usage request failed")
+
+        remaining_credits = self._optional_int(data.get("remainingCredits"))
+        plan_credits = self._optional_int(data.get("planCredits"))
+        used_credits, usage_ratio = self._calculate_usage(remaining_credits, plan_credits)
+
+        return ProviderUsageResponse(
+            provider="firecrawl",
+            available=True,
+            remaining_credits=remaining_credits,
+            plan_credits=plan_credits,
+            used_credits=used_credits,
+            usage_ratio=usage_ratio,
+            billing_period_start=data.get("billingPeriodStart"),
+            billing_period_end=data.get("billingPeriodEnd"),
+        )
+
+    async def get_historical_usage(self, *, by_api_key: bool = False) -> ProviderHistoricalUsageResponse:
+        params = {"byApiKey": "true"} if by_api_key else None
+        payload = await self._get_json(self.historical_usage_url, params=params)
+
+        if not payload.get("success", False):
+            raise FirecrawlUsageError("Firecrawl usage request failed")
+
+        raw_periods = payload.get("periods", [])
+        if not isinstance(raw_periods, list):
+            raise FirecrawlUsageError("Firecrawl usage request failed")
+
+        periods = [self._parse_period(period) for period in raw_periods if isinstance(period, dict)]
+        return ProviderHistoricalUsageResponse(
+            provider="firecrawl",
+            available=True,
+            by_api_key=by_api_key,
+            periods=periods,
+        )
+
+    async def _get_json(self, url: str, *, params: dict | None = None) -> dict:
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                request_kwargs = {"headers": {"Authorization": f"Bearer {self.api_key}"}}
+                if params is not None:
+                    request_kwargs["params"] = params
+                resp = await client.get(
+                    url,
+                    **request_kwargs,
+                )
+                resp.raise_for_status()
+                payload = resp.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise FirecrawlUsageError("Firecrawl usage request failed") from exc
+        if not isinstance(payload, dict):
+            raise FirecrawlUsageError("Firecrawl usage request failed")
+        return payload
+
+    def _parse_period(self, period: dict) -> ProviderUsagePeriod:
+        return ProviderUsagePeriod(
+            start_date=str(period.get("startDate", "")),
+            end_date=str(period.get("endDate", "")),
+            api_key=self._mask_api_key(period.get("apiKey")),
+            total_credits=self._required_int(period.get("totalCredits")),
+        )
+
+    def _mask_api_key(self, value: object) -> str | None:
+        if not isinstance(value, str) or not value:
+            return None
+        if len(value) <= 10:
+            return "***"
+        return f"{value[:6]}...{value[-4:]}"
+
+    def _optional_int(self, value: object) -> int | None:
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError) as exc:
+            raise FirecrawlUsageError("Firecrawl usage request failed") from exc
+
+    def _required_int(self, value: object) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError) as exc:
+            raise FirecrawlUsageError("Firecrawl usage request failed") from exc
+
+    def _calculate_usage(
+        self, remaining_credits: int | None, plan_credits: int | None
+    ) -> tuple[int | None, float | None]:
+        if remaining_credits is None or plan_credits is None:
+            return None, None
+        if remaining_credits > plan_credits:
+            return None, None
+
+        used_credits = plan_credits - remaining_credits
+        if plan_credits <= 0:
+            return used_credits, None
+        return used_credits, used_credits / plan_credits

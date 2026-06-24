@@ -137,6 +137,75 @@ async def test_search_route_marks_fallback_provider_provenance(monkeypatch):
     assert cached_calls[0][0] == "tavily"
 
 
+async def test_search_route_uses_fallback_when_primary_provider_raises(monkeypatch):
+    from starlette.requests import Request
+
+    from app.routes import search as search_route
+
+    class Provider:
+        def __init__(self, response: SearchResponse | None = None, error: Exception | None = None):
+            self.response = response
+            self.error = error
+
+        async def search(self, request: SearchRequest) -> SearchResponse:
+            if self.error:
+                raise self.error
+            assert self.response is not None
+            return self.response
+
+    fallback_response = SearchResponse(
+        query="fusion",
+        type=SearchType.WEB,
+        provider="brave",
+        results=[
+            SearchResultItem(title="one", url="https://one.example", description="one"),
+            SearchResultItem(title="two", url="https://two.example", description="two"),
+        ],
+    )
+
+    async def fake_get_cached(*_args, **_kwargs):
+        return None
+
+    cached_calls = []
+
+    async def fake_set_cached(*args):
+        cached_calls.append(args)
+
+    monkeypatch.setattr(search_route, "get_cached", fake_get_cached)
+    monkeypatch.setattr(search_route, "set_cached", fake_set_cached)
+    monkeypatch.setattr(
+        search_route, "get_provider", lambda _name=None: Provider(error=TimeoutError("primary timeout"))
+    )
+    monkeypatch.setattr(
+        search_route,
+        "get_fallback_provider",
+        lambda _primary: ("brave", Provider(fallback_response)),
+    )
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/search",
+            "headers": [],
+            "query_string": b"",
+            "client": ("127.0.0.1", 12345),
+            "server": ("testserver", 80),
+            "scheme": "http",
+        }
+    )
+    body = SearchRequest(query="fusion", provider="firecrawl", count=2)
+
+    response = await search_route.search.__wrapped__(request, body)
+
+    assert response.provider == "brave"
+    assert response.requested_provider == "firecrawl"
+    assert response.result_provider == "brave"
+    assert response.fallback_used is True
+    assert response.provider_chain == ["firecrawl", "brave"]
+    assert cached_calls[0][0] == "brave"
+
+
 def test_registry_registers_firecrawl_when_key_is_present(monkeypatch):
     from app.providers import registry
 

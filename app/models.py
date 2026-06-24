@@ -41,3 +41,28 @@ class SearchResponse(BaseModel):
     cached: bool = False
     cache_key_version: int = 2
     results: list[SearchResultItem] = []
+
+
+class ProviderUsageResponse(BaseModel):
+    provider: str
+    available: bool
+    remaining_credits: int | None = None
+    plan_credits: int | None = None
+    used_credits: int | None = None
+    usage_ratio: float | None = None
+    billing_period_start: str | None = None
+    billing_period_end: str | None = None
+
+
+class ProviderUsagePeriod(BaseModel):
+    start_date: str
+    end_date: str
+    api_key: str | None = None
+    total_credits: int
+
+
+class ProviderHistoricalUsageResponse(BaseModel):
+    provider: str
+    available: bool
+    by_api_key: bool = False
+    periods: list[ProviderUsagePeriod] = Field(default_factory=list)
