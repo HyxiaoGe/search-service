@@ -6,7 +6,7 @@
 
 ## 特性
 
-- **Provider 无关**：通过配置切换搜索后端（Brave、Tavily、SearXNG），无需改代码
+- **Provider 无关**：通过配置切换搜索后端（Brave、Tavily、Firecrawl、SearXNG），无需改代码
 - **多类型搜索**：Web、News、Image
 - **MCP Server**：Claude Code 和 AI Agent 可直接调用搜索工具
 - **Redis 缓存**：基于 TTL 的查询去重缓存
@@ -17,7 +17,7 @@
 
 ```bash
 cp .env.example .env
-# 编辑 .env，填入 BRAVE_API_KEY
+# 编辑 .env，填入 BRAVE_API_KEY、TAVILY_API_KEY 或 FIRECRAWL_API_KEY
 docker compose up -d
 ```
 
@@ -89,6 +89,9 @@ Claude Code 集成配置：
 |------|--------|------|
 | `SEARCH_PROVIDER` | `brave` | 当前搜索 Provider |
 | `BRAVE_API_KEY` | — | Brave Search API 密钥 |
+| `TAVILY_API_KEY` | — | Tavily Search API 密钥 |
+| `FIRECRAWL_API_KEY` | — | Firecrawl API 密钥 |
+| `FIRECRAWL_API_URL` | `https://api.firecrawl.dev` | Firecrawl API 基础地址 |
 | `REDIS_URL` | `redis://redis:6379` | Redis 连接地址 |
 | `CACHE_TTL_WEB` | `600` | Web 搜索缓存时间（秒） |
 | `CACHE_TTL_NEWS` | `300` | 新闻搜索缓存时间（秒） |

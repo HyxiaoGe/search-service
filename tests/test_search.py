@@ -1,4 +1,25 @@
+import httpx
+import pytest
+
 from app.models import SearchRequest, SearchResponse, SearchResultItem, SearchType
+
+
+def _firecrawl_client(response_data: dict, calls: list[dict]):
+    class FakeAsyncClient:
+        def __init__(self, timeout: int):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, _exc_type, _exc, _tb):
+            return False
+
+        async def post(self, url: str, json: dict, headers: dict):
+            calls.append({"url": url, "json": json, "headers": headers, "timeout": self.timeout})
+            return httpx.Response(200, json=response_data, request=httpx.Request("POST", url))
+
+    return FakeAsyncClient
 
 
 def test_search_request_defaults():
@@ -114,3 +135,186 @@ async def test_search_route_marks_fallback_provider_provenance(monkeypatch):
     assert response.fallback_used is True
     assert response.provider_chain == ["brave", "tavily"]
     assert cached_calls[0][0] == "tavily"
+
+
+def test_registry_registers_firecrawl_when_key_is_present(monkeypatch):
+    from app.providers import registry
+
+    registry._providers.clear()
+    monkeypatch.setattr(registry.settings, "SEARCH_PROVIDER", "brave")
+    monkeypatch.setattr(registry.settings, "TAVILY_API_KEY", "")
+    monkeypatch.setattr(registry.settings, "FIRECRAWL_API_KEY", "fc-test-key")
+
+    providers = registry.list_providers()
+
+    assert {"name": "firecrawl", "available": True} in providers
+    assert registry.get_provider("firecrawl").api_key == "fc-test-key"
+    registry._providers.clear()
+
+
+async def test_firecrawl_web_response_parsing(monkeypatch):
+    from app.providers import firecrawl
+
+    calls: list[dict] = []
+    monkeypatch.setattr(firecrawl.settings, "FIRECRAWL_API_KEY", "fc-test-key")
+    monkeypatch.setattr(
+        firecrawl.httpx,
+        "AsyncClient",
+        _firecrawl_client(
+            {
+                "data": {
+                    "web": [
+                        {
+                            "title": "Fusion",
+                            "url": "https://example.com/fusion",
+                            "description": "摘要",
+                            "markdown": "# 正文",
+                            "publishedDate": "2026-06-23",
+                            "favicon": "https://example.com/favicon.ico",
+                        }
+                    ]
+                }
+            },
+            calls,
+        ),
+    )
+
+    response = await firecrawl.FirecrawlProvider().search(SearchRequest(query="fusion", count=2))
+
+    assert response.provider == "firecrawl"
+    assert response.type == SearchType.WEB
+    assert response.results == [
+        SearchResultItem(
+            title="Fusion",
+            url="https://example.com/fusion",
+            description="摘要",
+            content="# 正文",
+            published_at="2026-06-23",
+            favicon="https://example.com/favicon.ico",
+        )
+    ]
+    assert calls[0]["url"] == "https://api.firecrawl.dev/v2/search"
+    assert calls[0]["headers"]["Authorization"] == "Bearer fc-test-key"
+    assert calls[0]["json"] == {
+        "query": "fusion",
+        "limit": 2,
+        "sources": ["web"],
+        "country": "US",
+    }
+
+
+async def test_firecrawl_news_response_parses_snippet_and_date(monkeypatch):
+    from app.providers import firecrawl
+
+    calls: list[dict] = []
+    monkeypatch.setattr(firecrawl.settings, "FIRECRAWL_API_KEY", "fc-test-key")
+    monkeypatch.setattr(
+        firecrawl.httpx,
+        "AsyncClient",
+        _firecrawl_client(
+            {
+                "data": {
+                    "news": [
+                        {
+                            "title": "News",
+                            "url": "https://news.example/article",
+                            "snippet": "新闻摘要",
+                            "date": "2026-06-24",
+                            "favicon": "https://news.example/favicon.ico",
+                        }
+                    ]
+                }
+            },
+            calls,
+        ),
+    )
+
+    response = await firecrawl.FirecrawlProvider().search(SearchRequest(query="fusion", type=SearchType.NEWS, count=1))
+
+    assert response.provider == "firecrawl"
+    assert response.results == [
+        SearchResultItem(
+            title="News",
+            url="https://news.example/article",
+            description="新闻摘要",
+            content="新闻摘要",
+            published_at="2026-06-24",
+            favicon="https://news.example/favicon.ico",
+        )
+    ]
+
+
+async def test_firecrawl_image_response_parsing(monkeypatch):
+    from app.providers import firecrawl
+
+    calls: list[dict] = []
+    monkeypatch.setattr(firecrawl.settings, "FIRECRAWL_API_KEY", "fc-test-key")
+    monkeypatch.setattr(
+        firecrawl.httpx,
+        "AsyncClient",
+        _firecrawl_client(
+            {
+                "data": {
+                    "images": [
+                        {
+                            "title": "Image",
+                            "imageUrl": "https://cdn.example/image.png",
+                            "url": "https://example.com/page",
+                        }
+                    ]
+                }
+            },
+            calls,
+        ),
+    )
+
+    response = await firecrawl.FirecrawlProvider().search(SearchRequest(query="fusion", type=SearchType.IMAGE, count=1))
+
+    assert response.provider == "firecrawl"
+    assert response.results == [
+        SearchResultItem(
+            title="Image",
+            url="https://cdn.example/image.png",
+            description="https://example.com/page",
+        )
+    ]
+    assert calls[0]["json"]["sources"] == ["images"]
+
+
+@pytest.mark.parametrize(
+    ("freshness", "expected_tbs"),
+    [
+        ("pd", "qdr:d"),
+        ("pw", "qdr:w"),
+        ("pm", "qdr:m"),
+        ("py", "qdr:y"),
+        ("cdr:1,cd_min:06/01/2026", "cdr:1,cd_min:06/01/2026"),
+    ],
+)
+async def test_firecrawl_freshness_and_domain_params_map(monkeypatch, freshness: str, expected_tbs: str):
+    from app.providers import firecrawl
+
+    calls: list[dict] = []
+    monkeypatch.setattr(firecrawl.settings, "FIRECRAWL_API_KEY", "fc-test-key")
+    monkeypatch.setattr(firecrawl.httpx, "AsyncClient", _firecrawl_client({"data": {"news": []}}, calls))
+
+    await firecrawl.FirecrawlProvider().search(
+        SearchRequest(
+            query="fusion",
+            type=SearchType.NEWS,
+            count=3,
+            lang="zh",
+            region="ca",
+            freshness=freshness,
+            domain_filters=["example.com", "openai.com"],
+        )
+    )
+
+    assert calls[0]["json"] == {
+        "query": "fusion",
+        "limit": 3,
+        "sources": ["news"],
+        "country": "CA",
+        "tbs": expected_tbs,
+        "includeDomains": ["example.com", "openai.com"],
+    }

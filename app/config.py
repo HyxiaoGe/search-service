@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     SEARCH_PROVIDER: str = "brave"
     BRAVE_API_KEY: str = ""
     TAVILY_API_KEY: str = ""
+    FIRECRAWL_API_KEY: str = ""
+    FIRECRAWL_API_URL: str = "https://api.firecrawl.dev"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379"

@@ -6,7 +6,7 @@ A lightweight, stateless search middleware that wraps third-party search APIs an
 
 ## Features
 
-- **Provider-agnostic**: Swap search backends (Brave, Tavily, SearXNG) via config, no code changes
+- **Provider-agnostic**: Swap search backends (Brave, Tavily, Firecrawl, SearXNG) via config, no code changes
 - **Multi-type search**: Web, News, Image
 - **MCP Server**: Direct tool access for Claude Code and AI agents
 - **Redis caching**: Deduplicates queries with TTL-based cache
@@ -17,7 +17,7 @@ A lightweight, stateless search middleware that wraps third-party search APIs an
 
 ```bash
 cp .env.example .env
-# Edit .env and set your BRAVE_API_KEY
+# Edit .env and set your BRAVE_API_KEY, TAVILY_API_KEY or FIRECRAWL_API_KEY
 docker compose up -d
 ```
 
@@ -89,6 +89,9 @@ See [.env.example](.env.example) for all available options.
 |----------|---------|-------------|
 | `SEARCH_PROVIDER` | `brave` | Active search provider |
 | `BRAVE_API_KEY` | — | Brave Search API key |
+| `TAVILY_API_KEY` | — | Tavily Search API key |
+| `FIRECRAWL_API_KEY` | — | Firecrawl API key |
+| `FIRECRAWL_API_URL` | `https://api.firecrawl.dev` | Firecrawl API base URL |
 | `REDIS_URL` | `redis://redis:6379` | Redis connection URL |
 | `CACHE_TTL_WEB` | `600` | Web search cache TTL (seconds) |
 | `CACHE_TTL_NEWS` | `300` | News search cache TTL (seconds) |
