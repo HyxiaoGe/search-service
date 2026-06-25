@@ -57,6 +57,7 @@ async def get_cached(provider: str, request: SearchRequest) -> SearchResponse | 
         return None
     resp = SearchResponse.model_validate_json(data)
     resp.cached = True
+    resp.credits_used = None
     resp.cache_key_version = 3
     return resp
 

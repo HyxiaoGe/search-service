@@ -39,6 +39,7 @@ class SearchResponse(BaseModel):
     fallback_used: bool = False
     provider_chain: list[str] = Field(default_factory=list)
     relaxed_freshness: bool = False
+    credits_used: int | None = None
     cached: bool = False
     cache_key_version: int = 3
     results: list[SearchResultItem] = []
@@ -53,6 +54,17 @@ class ProviderUsageResponse(BaseModel):
     usage_ratio: float | None = None
     billing_period_start: str | None = None
     billing_period_end: str | None = None
+    recorded_usage: "ProviderRecordedUsage | None" = None
+
+
+class ProviderRecordedUsage(BaseModel):
+    provider: str
+    available: bool = True
+    credits_used: int
+    request_count: int
+    period_start: str | None = None
+    period_end: str | None = None
+    source: str = "search_response_credits_used"
 
 
 class ProviderUsagePeriod(BaseModel):

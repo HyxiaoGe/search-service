@@ -4,6 +4,7 @@ from app.providers.base import SearchProvider
 from app.providers.brave import BraveProvider
 from app.providers.firecrawl import FirecrawlProvider, FirecrawlUsageClient, FirecrawlUsageError
 from app.providers.tavily import TavilyProvider
+from app.usage import get_recorded_provider_usage
 
 _providers: dict[str, SearchProvider] = {}
 
@@ -50,9 +51,16 @@ async def get_firecrawl_usage() -> ProviderUsageResponse:
         return ProviderUsageResponse(provider="firecrawl", available=False)
 
     try:
-        return await FirecrawlUsageClient().get_usage()
+        usage = await FirecrawlUsageClient().get_usage()
     except FirecrawlUsageError as exc:
         raise ProviderUsageError(str(exc)) from exc
+
+    usage.recorded_usage = await get_recorded_provider_usage(
+        "firecrawl",
+        period_start=usage.billing_period_start,
+        period_end=usage.billing_period_end,
+    )
+    return usage
 
 
 async def get_firecrawl_historical_usage(*, by_api_key: bool = False) -> ProviderHistoricalUsageResponse:

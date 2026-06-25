@@ -1,3 +1,5 @@
+from unittest.mock import AsyncMock
+
 import httpx
 
 REAL_ASYNC_CLIENT = httpx.AsyncClient
@@ -29,11 +31,27 @@ async def _get_usage():
 
 
 async def test_firecrawl_usage_endpoint_fetches_and_returns_credit_usage(monkeypatch):
-    from app.providers import firecrawl
+    from app.models import ProviderRecordedUsage
+    from app.providers import firecrawl, registry
 
     calls: list[dict] = []
     monkeypatch.setattr(firecrawl.settings, "FIRECRAWL_API_KEY", "fc-test-key")
     monkeypatch.setattr(firecrawl.settings, "FIRECRAWL_API_URL", "https://firecrawl.example/api/")
+    monkeypatch.setattr(
+        registry,
+        "get_recorded_provider_usage",
+        AsyncMock(
+            return_value=ProviderRecordedUsage(
+                provider="firecrawl",
+                available=True,
+                credits_used=12,
+                request_count=3,
+                period_start="2025-01-01T00:00:00Z",
+                period_end="2025-01-31T23:59:59Z",
+            )
+        ),
+        raising=False,
+    )
     monkeypatch.setattr(
         firecrawl.httpx,
         "AsyncClient",
@@ -63,6 +81,15 @@ async def test_firecrawl_usage_endpoint_fetches_and_returns_credit_usage(monkeyp
         "usage_ratio": 0.75,
         "billing_period_start": "2025-01-01T00:00:00Z",
         "billing_period_end": "2025-01-31T23:59:59Z",
+        "recorded_usage": {
+            "provider": "firecrawl",
+            "available": True,
+            "credits_used": 12,
+            "request_count": 3,
+            "period_start": "2025-01-01T00:00:00Z",
+            "period_end": "2025-01-31T23:59:59Z",
+            "source": "search_response_credits_used",
+        },
     }
     assert calls == [
         {
@@ -95,6 +122,7 @@ async def test_firecrawl_usage_endpoint_does_not_call_firecrawl_without_api_key(
         "usage_ratio": None,
         "billing_period_start": None,
         "billing_period_end": None,
+        "recorded_usage": None,
     }
 
 

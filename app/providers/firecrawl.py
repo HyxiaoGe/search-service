@@ -49,6 +49,7 @@ class FirecrawlProvider:
         async with httpx.AsyncClient(timeout=20) as client:
             data = await self._post_search(client, payload, headers)
             results = self._parse_results(data, request.type)
+            credits_used = self._credits_used(data)
             relaxed_freshness = False
 
             if not results and self._should_relax_freshness(request, payload):
@@ -59,6 +60,7 @@ class FirecrawlProvider:
                     log.warning("firecrawl_relaxed_freshness_failed", query=request.query, error=str(exc))
                 else:
                     relaxed_results = self._parse_results(relaxed_data, request.type)
+                    credits_used = self._sum_credits(credits_used, self._credits_used(relaxed_data))
                     log.info(
                         "firecrawl_relaxed_freshness",
                         query=request.query,
@@ -76,6 +78,7 @@ class FirecrawlProvider:
             provider="firecrawl",
             cached=False,
             relaxed_freshness=relaxed_freshness,
+            credits_used=credits_used,
             results=results,
         )
 
@@ -122,6 +125,23 @@ class FirecrawlProvider:
         if search_type == SearchType.IMAGE:
             return self._parse_image_results(data)
         return self._parse_text_results(data, search_type)
+
+    def _credits_used(self, data: dict) -> int | None:
+        value = data.get("creditsUsed")
+        if value is None:
+            return None
+        try:
+            credits = int(value)
+        except (TypeError, ValueError):
+            return None
+        return credits if credits >= 0 else None
+
+    def _sum_credits(self, left: int | None, right: int | None) -> int | None:
+        if left is None:
+            return right
+        if right is None:
+            return left
+        return left + right
 
     def _items_for_type(self, data: dict, search_type: SearchType) -> list[dict]:
         container = data.get("data", {})
