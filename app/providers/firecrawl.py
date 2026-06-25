@@ -237,10 +237,10 @@ class FirecrawlUsageClient:
 
     def _parse_period(self, period: dict) -> ProviderUsagePeriod:
         return ProviderUsagePeriod(
-            start_date=str(period.get("startDate", "")),
-            end_date=str(period.get("endDate", "")),
+            start_date=str(period.get("startDate") or ""),
+            end_date=str(period.get("endDate") or ""),
             api_key=self._mask_api_key(period.get("apiKey")),
-            total_credits=self._required_int(period.get("totalCredits")),
+            total_credits=self._required_int(period.get("totalCredits", period.get("creditsUsed"))),
         )
 
     def _mask_api_key(self, value: object) -> str | None:

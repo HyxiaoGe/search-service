@@ -215,3 +215,57 @@ async def test_firecrawl_historical_usage_endpoint_fetches_periods_and_masks_api
         }
     ]
     assert "fc-1234567890abcdef" not in response.text
+
+
+async def test_firecrawl_historical_usage_accepts_current_firecrawl_credits_used_shape(monkeypatch):
+    from app.providers import firecrawl
+
+    class FakeAsyncClient:
+        def __init__(self, timeout: int):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, _exc_type, _exc, _tb):
+            return False
+
+        async def get(self, url: str, headers: dict, params: dict | None = None):
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "periods": [
+                        {
+                            "startDate": "2026-06-01T00:00:00.000Z",
+                            "endDate": None,
+                            "creditsUsed": 32,
+                        }
+                    ],
+                },
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(firecrawl.settings, "FIRECRAWL_API_KEY", "fc-test-key")
+    monkeypatch.setattr(firecrawl.settings, "FIRECRAWL_API_URL", "https://api.firecrawl.dev")
+    monkeypatch.setattr(firecrawl.httpx, "AsyncClient", FakeAsyncClient)
+
+    from app.main import app
+
+    async with REAL_ASYNC_CLIENT(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+        response = await client.get("/usage/firecrawl/historical")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "provider": "firecrawl",
+        "available": True,
+        "by_api_key": False,
+        "periods": [
+            {
+                "start_date": "2026-06-01T00:00:00.000Z",
+                "end_date": "",
+                "api_key": None,
+                "total_credits": 32,
+            }
+        ],
+    }
