@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     CACHE_TTL_WEB: int = 600
     CACHE_TTL_NEWS: int = 300
     CACHE_TTL_IMAGE: int = 1800
+    FIRECRAWL_USAGE_CACHE_TTL: int = 300
+    FIRECRAWL_HISTORICAL_USAGE_CACHE_TTL: int = 3600
+    FIRECRAWL_USAGE_STALE_TTL: int = 3600
+    FIRECRAWL_HISTORICAL_USAGE_STALE_TTL: int = 86400
 
     # Server
     HOST: str = "0.0.0.0"

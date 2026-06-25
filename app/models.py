@@ -65,6 +65,13 @@ class ProviderRecordedUsage(BaseModel):
     period_start: str | None = None
     period_end: str | None = None
     source: str = "search_response_credits_used"
+    daily: list["ProviderRecordedUsageDay"] = Field(default_factory=list)
+
+
+class ProviderRecordedUsageDay(BaseModel):
+    date: str
+    credits_used: int
+    request_count: int
 
 
 class ProviderUsagePeriod(BaseModel):

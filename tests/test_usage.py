@@ -34,6 +34,21 @@ class FakeRedis:
     async def mget(self, keys: list[str]):
         return [self.values.get(key) for key in keys]
 
+    async def get(self, key: str):
+        return self.values.get(key)
+
+    async def setex(self, key: str, ttl: int, value: str):
+        self.values[key] = value
+        self.values[f"{key}:ttl"] = ttl
+
+    async def set(self, key: str, value: str, *, ex: int | None = None, nx: bool = False):
+        if nx and key in self.values:
+            return False
+        self.values[key] = value
+        if ex is not None:
+            self.values[f"{key}:ttl"] = ex
+        return True
+
 
 async def test_record_search_credits_increments_daily_credit_and_request_keys(monkeypatch):
     from app import usage
@@ -85,6 +100,11 @@ async def test_get_recorded_provider_usage_sums_daily_keys_for_period(monkeypatc
         "period_start": "2026-06-22T21:35:09.173Z",
         "period_end": "2026-06-24T21:35:09.173Z",
         "source": "search_response_credits_used",
+        "daily": [
+            {"date": "2026-06-22", "credits_used": 3, "request_count": 1},
+            {"date": "2026-06-23", "credits_used": 5, "request_count": 2},
+            {"date": "2026-06-24", "credits_used": 0, "request_count": 0},
+        ],
     }
 
 
@@ -105,3 +125,4 @@ async def test_get_recorded_provider_usage_marks_unavailable_when_redis_fails(mo
     assert summary.available is False
     assert summary.credits_used == 0
     assert summary.request_count == 0
+    assert summary.daily == []

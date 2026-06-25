@@ -2,7 +2,7 @@ from datetime import UTC, date, datetime, timedelta
 
 from app.cache import get_redis
 from app.logger import get_logger
-from app.models import ProviderRecordedUsage
+from app.models import ProviderRecordedUsage, ProviderRecordedUsageDay
 
 log = get_logger()
 
@@ -46,13 +46,22 @@ async def get_recorded_provider_usage(
 
     credits_used = 0
     request_count = 0
+    daily: list[ProviderRecordedUsageDay] = []
     available = True
     try:
         redis = await get_redis()
         credit_values = await redis.mget(credit_keys) if credit_keys else []
         request_values = await redis.mget(request_keys) if request_keys else []
-        credits_used = sum(_safe_int(value) for value in credit_values)
-        request_count = sum(_safe_int(value) for value in request_values)
+        daily = [
+            ProviderRecordedUsageDay(
+                date=day.isoformat(),
+                credits_used=_safe_int(credit_value),
+                request_count=_safe_int(request_value),
+            )
+            for day, credit_value, request_value in zip(days, credit_values, request_values, strict=True)
+        ]
+        credits_used = sum(day.credits_used for day in daily)
+        request_count = sum(day.request_count for day in daily)
     except Exception as exc:
         available = False
         log.warning("usage_summary_failed", provider=provider, error=str(exc))
@@ -64,6 +73,7 @@ async def get_recorded_provider_usage(
         request_count=request_count,
         period_start=period_start,
         period_end=period_end,
+        daily=daily,
     )
 
 
